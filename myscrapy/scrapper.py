@@ -1,11 +1,14 @@
 """
 Scrapper implementations
 """
+import json
+
+from myscrapy.crawler import GitHubSearchCrawler
 
 
 class GitHubScrapper:
     """
-    A Github search scrapper.
+    The Github search page scrapper.
     """
     def __init__(self, settings_file):
         """
@@ -14,4 +17,14 @@ class GitHubScrapper:
         :param settings_file: Crawler config file path.
         :type settings_file: str
         """
-        pass
+        with open(settings_file, encoding='utf-8') as json_data:
+            self.config = json.load(json_data)
+
+        self.crawler = GitHubSearchCrawler(
+            search_keywords=self.config['keywords'],
+            search_type=self.config['type'],
+            proxies=self.config['proxies']
+        )
+
+    def scrape(self):
+        self.crawler.parse()

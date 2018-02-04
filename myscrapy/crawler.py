@@ -2,6 +2,10 @@
 Crawler implementations.
 """
 import random
+import re
+
+import requests
+
 
 GITHUB_TYPES = (
     'Repositories',
@@ -25,19 +29,25 @@ class BaseCrawler:
 
     def _get_proxy(self):
         """
-        Randomly selects a proxy from the proxy list.
+        Randomly selects a proxy from the proxy list and builds
+        the `proxies` argument of the `Requests` library.
 
         :return: A random proxy.
-        :rtype: str
+        :rtype: dict
         """
-        return random.choice(self.proxies)
+        return {'https': 'http://{}'.format(random.choice(self.proxies))}
 
 
-class GHitHubCrawler(BaseCrawler):
+class GitHubSearchCrawler(BaseCrawler):
     """
     Crawler for GitHub's search page.
     """
-    def __init__(self, search_keywords, search_type, proxies):
+    #: Crawler root page target
+    ROOT_PAGE = 'https://github.com'
+    #: Crawler search page target
+    SEARCH_PAGE = 'https://github.com/search'
+
+    def __init__(self, search_keywords, search_type, proxies=None):
         """
         Class initialization.
 
@@ -63,4 +73,41 @@ class GHitHubCrawler(BaseCrawler):
         :return: results links.
         :rtype: list
         """
-        pass
+        scrapped_data = []
+        payload = {
+            'q': ' '.join(self.search_keywords),
+            'type': self.search_type,
+            'utf8': '✓'
+        }
+
+        response = requests.get(
+            self.SEARCH_PAGE,
+            params=payload,
+            # proxies=self._get_proxy()
+        )
+        response.encoding = 'utf-8'
+
+        regex_types = {
+            'Repositories': (
+                r'<ul class=\"repo-list\">(.+?)</ul>',
+                r'<h3.+?<a href=\"(.+?)\"'
+            ),
+            'Issues': (
+                r'<div class=\"issue-list\">(.+?)<div class=\"paginate-container\">',
+                r'<h3.+?<a href=\"(.+?)\"'
+            ),
+            'Wikis': (
+                r'<div class=\"wiki-list\">(.+?)<div class=\"paginate-container\">',
+                r'class=\"h5\".+?<a href=\"(.+?)\"'
+            )
+        }
+
+        # Capturing block of results
+        results_list_re = re.compile(regex_types[self.search_type][0], re.DOTALL)
+        results_list = results_list_re.search(response.text).group(1)
+
+        # Capturing each result link
+        result_item_re = re.compile(regex_types[self.search_type][1], re.DOTALL)
+        result_item_iter = result_item_re.finditer(results_list)
+        for match in result_item_iter:
+            scrapped_data.append(''.join((self.ROOT_PAGE, match.group(1))))
