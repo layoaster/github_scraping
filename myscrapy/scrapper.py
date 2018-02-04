@@ -25,6 +25,13 @@ class GitHubScrapper:
             search_type=self.config['type'],
             proxies=self.config['proxies']
         )
+        self.results = None
 
     def scrape(self):
-        self.crawler.parse()
+        self.results = self.crawler.parse()
+
+    def write_output(self):
+        if self.results is not None:
+            with open('output.json', 'w', encoding='utf-8') as output_file:
+                json.dump(self.results, output_file, indent=3)
+

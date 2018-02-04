@@ -7,5 +7,5 @@ from myscrapy.scrapper import GitHubScrapper
 
 if __name__ == '__main__':
     scrapper = GitHubScrapper(sys.argv[1])
-
     scrapper.scrape()
+    scrapper.write_output()

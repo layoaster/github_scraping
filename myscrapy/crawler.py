@@ -5,6 +5,7 @@ import random
 import re
 
 import requests
+from requests.exceptions import ProxyError
 
 
 GITHUB_TYPES = (
@@ -66,6 +67,54 @@ class GitHubSearchCrawler(BaseCrawler):
             raise ValueError('{} is not a valid type'.format(search_type))
         self.search_type = search_type
 
+    def _make_request(self, url, payload=None):
+        """
+        Make the HTTP GET request handling proxy errors.
+
+        :param url: URL to make the HTTP GET request.
+        :type url: str
+        :param payload: Parameter to pass to the GET request.
+        :type payload: dict
+        :return the Response object.
+        :rtype: :class:`requests.Response`
+        """
+        response = None
+        while 1:
+            try:
+                response = requests.get(
+                    url,
+                    params=payload,
+                    proxies=self._get_proxy()
+                )
+            except ProxyError:
+                print("Proxy error, attempting again ...")
+            else:
+                break
+
+        response.encoding = 'utf-8'
+
+        return response
+
+    def _get_repo_metadata(self, url):
+        """
+        Parses a repository page to get the languages stats.
+
+        :param url: Repository's URL
+        :return: Repository's stats.
+        :rtype: dict
+        """
+        response = self._make_request(url)
+
+        # Capturing block of language stats
+        languages_re = re.compile(r'<span class=\"lang\">(.+?)<.+?percent">(.+?)%', re.DOTALL)
+        languages_iter = languages_re.finditer(response.text)
+
+        lang_stats = {}
+        for match in languages_iter:
+            lang_stats[match.group(1)] = float(match.group(2))
+
+        return lang_stats
+
     def parse(self):
         """
         Parse search page to gather search results web links.
@@ -73,19 +122,12 @@ class GitHubSearchCrawler(BaseCrawler):
         :return: results links.
         :rtype: list
         """
-        scrapped_data = []
         payload = {
             'q': ' '.join(self.search_keywords),
             'type': self.search_type,
             'utf8': '✓'
         }
-
-        response = requests.get(
-            self.SEARCH_PAGE,
-            params=payload,
-            # proxies=self._get_proxy()
-        )
-        response.encoding = 'utf-8'
+        response = self._make_request(self.SEARCH_PAGE, payload=payload)
 
         regex_types = {
             'Repositories': (
@@ -104,10 +146,28 @@ class GitHubSearchCrawler(BaseCrawler):
 
         # Capturing block of results
         results_list_re = re.compile(regex_types[self.search_type][0], re.DOTALL)
-        results_list = results_list_re.search(response.text).group(1)
+        try:
+            results_list = results_list_re.search(response.text).group(1)
+        except AttributeError:
+            return []
 
         # Capturing each result link
         result_item_re = re.compile(regex_types[self.search_type][1], re.DOTALL)
         result_item_iter = result_item_re.finditer(results_list)
+
+        scrapped_data = []
         for match in result_item_iter:
-            scrapped_data.append(''.join((self.ROOT_PAGE, match.group(1))))
+            result_metadata = {
+                'url': ''.join((self.ROOT_PAGE, match.group(1)))
+            }
+            # Retrieving repo stats
+            if self.search_type == 'Repositories':
+                extras = {
+                    'owner': result_metadata['url'].split('/')[3],
+                    'language_stats': self._get_repo_metadata(result_metadata['url'])
+                }
+                result_metadata['extra'] = extras
+
+            scrapped_data.append(result_metadata)
+
+        return scrapped_data
