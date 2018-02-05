@@ -1,0 +1,9 @@
+[run]
+parallel = True
+branch = True
+concurrency = multiprocessing
+source =
+    myscrapy/
+omit =
+    *__init__.py
+    */tests/*

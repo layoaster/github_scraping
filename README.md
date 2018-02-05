@@ -144,8 +144,19 @@ For repository searches the output should look like:
 ]
 ```
 
-## ToDo's
+## Development
 
-* Unittesting.
+**Test & Coverage**
+
+You can run tests and get a coverage's html report by running:
+
+```bash
+py.test --cov-report html --cov -v
+```
+
+You can find the report on `./htmlcov/index.html`.
+
+**ToDo's**
+
 * Better handling of network-related errors.
-* Scrapper a given number of search results pages.
+* Scrape a given number of search results pages.

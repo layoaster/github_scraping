@@ -5,7 +5,7 @@ import random
 import re
 
 import requests
-from requests.exceptions import ProxyError
+from requests.exceptions import ConnectTimeout, ProxyError
 
 
 GITHUB_TYPES = (
@@ -19,6 +19,9 @@ class BaseCrawler:
     """
     Crawler's base class.
     """
+    #: Max number of retries in case of requests errors.
+    MAX_REQUESTS = 3
+
     def __init__(self, proxies):
         """
         Class initialization.
@@ -28,7 +31,7 @@ class BaseCrawler:
         """
         self.proxies = proxies
 
-    def _get_proxy(self):
+    def get_proxy(self):
         """
         Randomly selects a proxy from the proxy list and builds
         the `proxies` argument of the `Requests` library.
@@ -36,7 +39,45 @@ class BaseCrawler:
         :return: A random proxy.
         :rtype: dict
         """
-        return {'https': 'http://{}'.format(random.choice(self.proxies))}
+        if self.proxies:
+            return {'https': 'http://{}'.format(random.choice(self.proxies))}
+        else:
+            return None
+
+    def make_request(self, url, payload=None):
+        """
+        Make the HTTP GET request handling proxy errors.
+
+        :param url: URL to make the HTTP GET request.
+        :type url: str
+        :param payload: Parameter to pass to the GET request.
+        :type payload: dict
+        :return the Response object.
+        :rtype: :class:`requests.Response`
+        """
+        response = None
+        attempts = 0
+        while 1:
+            try:
+                response = requests.get(
+                    url,
+                    params=payload,
+                    proxies=self.get_proxy(),
+                    timeout=1.0
+                )
+            except (ProxyError, ConnectTimeout):
+                if attempts == self.MAX_REQUESTS:
+                    print("Max number of attempts reached. ")
+                    raise
+                else:
+                    print("Proxy error, attempting again ...")
+                    attempts += 1
+            else:
+                break
+
+        response.encoding = 'utf-8'
+
+        return response
 
 
 class GitHubSearchCrawler(BaseCrawler):
@@ -67,34 +108,6 @@ class GitHubSearchCrawler(BaseCrawler):
             raise ValueError('{} is not a valid type'.format(search_type))
         self.search_type = search_type
 
-    def _make_request(self, url, payload=None):
-        """
-        Make the HTTP GET request handling proxy errors.
-
-        :param url: URL to make the HTTP GET request.
-        :type url: str
-        :param payload: Parameter to pass to the GET request.
-        :type payload: dict
-        :return the Response object.
-        :rtype: :class:`requests.Response`
-        """
-        response = None
-        while 1:
-            try:
-                response = requests.get(
-                    url,
-                    params=payload,
-                    proxies=self._get_proxy()
-                )
-            except ProxyError:
-                print("Proxy error, attempting again ...")
-            else:
-                break
-
-        response.encoding = 'utf-8'
-
-        return response
-
     def _get_repo_metadata(self, url):
         """
         Parses a repository page to get the languages stats.
@@ -103,7 +116,7 @@ class GitHubSearchCrawler(BaseCrawler):
         :return: Repository's stats.
         :rtype: dict
         """
-        response = self._make_request(url)
+        response = self.make_request(url)
 
         # Capturing block of language stats
         languages_re = re.compile(r'<span class=\"lang\">(.+?)<.+?percent">(.+?)%', re.DOTALL)
@@ -127,7 +140,7 @@ class GitHubSearchCrawler(BaseCrawler):
             'type': self.search_type,
             'utf8': '✓'
         }
-        response = self._make_request(self.SEARCH_PAGE, payload=payload)
+        response = self.make_request(self.SEARCH_PAGE, payload=payload)
 
         regex_types = {
             'Repositories': (
